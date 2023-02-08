@@ -12,7 +12,7 @@ public class Config {
     private static Logger logger = Logger.getLogger(Config.class.getName());
     public static com.typesafe.config.Config applicationConf = ConfigFactory.parseResources("application-local.conf");
     String runMode = "local";
-    static String localProjectDir = "";
+    public static String localProjectDir = "";
 
     /**
      * Parse a config object from application.conf file in src/main/resources
