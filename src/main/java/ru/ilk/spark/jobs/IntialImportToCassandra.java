@@ -7,9 +7,11 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.api.java.UDF4;
 import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructType;
 import ru.ilk.cassandra.CassandraConfig;
 import ru.ilk.config.Config;
-import ru.ilk.creditcard.Schema;
+//import ru.ilk.creditcard.Schema;
+//import ru.ilk.creditcard.Schema;
 import ru.ilk.spark.DataReader;
 import ru.ilk.spark.SparkConfig;
 import ru.ilk.utils.Utils;
@@ -18,8 +20,7 @@ import java.util.HashMap;
 
 import static org.apache.spark.sql.functions.callUDF;
 import static org.apache.spark.sql.functions.col;
-import static org.apache.spark.sql.types.DataTypes.IntegerType;
-import static org.apache.spark.sql.types.DataTypes.TimestampType;
+import static org.apache.spark.sql.types.DataTypes.*;
 
 public class IntialImportToCassandra extends SparkJob {
 
@@ -33,9 +34,9 @@ public class IntialImportToCassandra extends SparkJob {
         SparkSession sparkSession = sparkJobVariable.sparkSession;
         Config.parseArgs(args);
 
-        Dataset<Row> customerDF = DataReader.read(SparkConfig.customerDatasource,
-                Schema.customerSchema,
-                sparkSession);
+        Dataset<Row> customerDF = DataReader.read(SparkConfig.customerDatasource, sparkSession);
+        customerDF.show();
+
 
         Dataset<Row> customerAgeDF = customerDF.withColumn("age",
                 (org.apache.spark.sql.functions.datediff(
@@ -43,17 +44,30 @@ public class IntialImportToCassandra extends SparkJob {
                         org.apache.spark.sql.functions.to_date(customerDF.col("dob"))
                 ).divide(365)).cast(IntegerType));
 
+        customerAgeDF.show();
+
         Dataset<Row> transactionDataframe = DataReader.read(SparkConfig.transactionDatasouce,
-                        Schema.fruadCheckedTransactionSchema,
-                        sparkSession
-                        );
-        Dataset<Row> transactionDF = transactionDataframe
-                .withColumn("trans_date",
-                        org.apache.spark.sql.functions.split(transactionDataframe.col("trans_date"), "T").getItem(0))
-                .withColumn("trans_time",
-                        org.apache.spark.sql.functions.concat_ws(" ", transactionDataframe.col("trans_date"), transactionDataframe.col("trans_date")))
-                        .withColumn("trans_time", org.apache.spark.sql.functions.unix_timestamp(
-                                transactionDataframe.col("trans_time"), "YYYY-MM-dd HH:mm:ss").cast(TimestampType));
+                        sparkSession);
+        transactionDataframe.show();
+
+        Dataset<Row> transactionDF = transactionDataframe.withColumn("trans_date",
+                org.apache.spark.sql.functions.split(transactionDataframe.col("trans_date"), "T").getItem(0))
+                ;
+//        transactionDF.show();
+
+//         transactionDF.
+        Dataset<Row> transactDF = transactionDF.withColumn("trans_time",
+                org.apache.spark.sql.functions.concat_ws(" ",
+                        transactionDF.col("trans_date"),
+                        transactionDF.col("trans_time")));
+        Dataset<Row> transDF = transactDF.withColumn("trans_time",
+                        org.apache.spark.sql.functions.to_timestamp(
+                                transactDF.col("trans_time"), "YYYY-MM-dd HH:mm:ss")
+                                .cast(TimestampType));
+
+        transDF.show();
+
+
 
 
         String COLUMN_DOUBLE_UDF_NAME = "distanceUdf";
@@ -64,8 +78,8 @@ public class IntialImportToCassandra extends SparkJob {
                 }, DataTypes.DoubleType);
 
 
-        Dataset<Row> processedDF = transactionDF.join(
-                org.apache.spark.sql.functions.broadcast(customerAgeDF), transactionDF.col("cc_num"))
+        Dataset<Row> processedDF = transDF.join(
+                org.apache.spark.sql.functions.broadcast(customerAgeDF), "cc_num")
                 .withColumn("distance",
                         org.apache.spark.sql.functions.lit(
                                 org.apache.spark.sql.functions.round(
@@ -74,10 +88,14 @@ public class IntialImportToCassandra extends SparkJob {
                                         , 2)))
                 .select("cc_num", "trans_num", "trans_time", "category", "merchant", "amt", "merch_lat", "merch_long", "distance", "age", "is_fraud");
 
+        processedDF.show();
         processedDF.cache();
 
-        Dataset<Row> fraudDF = processedDF.filter(processedDF.col("is_fraud").contains(1));
-        Dataset<Row> nonFraudDF = processedDF.filter(processedDF.col("is_fraud").contains(0));
+        Dataset<Row> fraudDF = processedDF.filter(processedDF.col("is_fraud").equalTo(1));
+        Dataset<Row> nonFraudDF = processedDF.filter(processedDF.col("is_fraud").equalTo(0));
+
+        fraudDF.show();
+        nonFraudDF.show();
 
 
         HashMap<String, String> hmCustomerDF = new HashMap<String, String>();
@@ -93,14 +111,14 @@ public class IntialImportToCassandra extends SparkJob {
         HashMap<String, String> hmFraudDF = new HashMap<String, String>();
         hmFraudDF.put("keyspace", CassandraConfig.keyspace);
         hmFraudDF.put("table", CassandraConfig.fraudTransactionTable);
-        /* Save fraud transaction data to fraud_transaction cassandra table*/
+//        /* Save fraud transaction data to fraud_transaction cassandra table*/
         fraudDF.write()
                 .format("org.apache.spark.sql.cassandra")
                 .mode("append")
                 .options(hmFraudDF)
                 .save();
 
-        /* Save non fraud transaction data to non_fraud_transaction cassandra table*/
+//        /* Save non fraud transaction data to non_fraud_transaction cassandra table*/
         HashMap<String, String> hmNonFraudDF = new HashMap<String, String>();
         hmNonFraudDF.put("keyspace", CassandraConfig.keyspace);
         hmNonFraudDF.put("table", CassandraConfig.nonFraudTransactionTable);
