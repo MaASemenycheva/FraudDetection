@@ -18,10 +18,16 @@ import java.util.List;
 public class DataReader {
     private static Logger logger = Logger.getLogger(DataReader.class.getName());
 
-    public static Dataset<Row> read(String transactionDatasource, StructType schema, SparkSession sparkSession) {
-        return sparkSession.read().option("header", "true")
-                .schema(schema)
-                .csv(transactionDatasource);
+    public static Dataset<Row> read(String transactionDatasource,
+//                                    StructType schema,
+                                    SparkSession sparkSession) {
+        return sparkSession.read()
+//                .option("header", "true")
+//                .schema(schema)
+//                .csv(transactionDatasource);
+                .format("csv")
+                .option("header", "true")
+                .load(transactionDatasource);
     }
 
     public static Dataset<Row> readFromCassandra(String keySpace, String table) {
@@ -45,4 +51,3 @@ public class DataReader {
         sparkSession.createDataFrame((JavaRDD<Row>) rowRdd, featureSchema);
     }
 }
-
