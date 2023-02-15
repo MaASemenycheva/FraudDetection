@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.VectorSlicer","timestamp":1676466131927,"sparkVersion":"2.2.1","uid":"vectorSlicer_ed3a8f1cc607","paramMap":{"indices":[],"names":["distance","amt","age"],"outputCol":"slicedfeatures","inputCol":"numericRawFeatures"}}
