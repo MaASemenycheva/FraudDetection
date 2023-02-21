@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.VectorAssembler","timestamp":1676466131904,"sparkVersion":"2.2.1","uid":"vecAssembler_7db6299a4157","paramMap":{"outputCol":"numericRawFeatures","inputCols":["distance","amt","age"]}}
