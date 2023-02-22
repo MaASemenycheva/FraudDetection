@@ -101,18 +101,20 @@ public class DstreamFraudDetection extends SparkJob {
         System.out.println("storedOffsets " + storedOffsets);
 
 
-        JavaInputDStream<ConsumerRecord<String, String>> stream =(storedOffsets == null)?
+        JavaInputDStream<ConsumerRecord<String, String>> stream =(storedOffsets.isPresent())?
+
+        KafkaUtils.createDirectStream(
+                streamingContext,
+                LocationStrategies.PreferConsistent(),
+                ConsumerStrategies.<String, String>Assign(storedOffsets.get().keySet(), kafkaParams, storedOffsets.get()))
+                :
                 KafkaUtils.createDirectStream(
                         streamingContext,
                         LocationStrategies.PreferConsistent(),
                         ConsumerStrategies.<String, String>Subscribe(topics, kafkaParams)
-                )
-                :
-         KafkaUtils.createDirectStream(
-                streamingContext,
-                LocationStrategies.PreferConsistent(),
-                ConsumerStrategies.<String, String>Assign(storedOffsets.get().keySet(), kafkaParams, storedOffsets.get())
+
         );
+
 
 
         JavaDStream<Triplet<String, Integer, Long>> transactionStream = stream.map(record -> new Triplet<>(record.value(), record.partition(), record.offset()));
