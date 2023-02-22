@@ -1,17 +1,13 @@
-package ru.ilk.spark.jobs;//package ru.ilk.spark.jobs;
+package ru.ilk.spark.jobs;
 
-//import org.apache.orc.DataReader;
 
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.api.java.UDF4;
 import org.apache.spark.sql.types.DataTypes;
-import org.apache.spark.sql.types.StructType;
 import ru.ilk.cassandra.CassandraConfig;
 import ru.ilk.config.Config;
-//import ru.ilk.creditcard.Schema;
-//import ru.ilk.creditcard.Schema;
 import ru.ilk.spark.DataReader;
 import ru.ilk.spark.SparkConfig;
 import ru.ilk.utils.Utils;
@@ -20,7 +16,8 @@ import java.util.HashMap;
 
 import static org.apache.spark.sql.functions.callUDF;
 import static org.apache.spark.sql.functions.col;
-import static org.apache.spark.sql.types.DataTypes.*;
+import static org.apache.spark.sql.types.DataTypes.IntegerType;
+import static org.apache.spark.sql.types.DataTypes.TimestampType;
 
 public class IntialImportToCassandra extends SparkJob {
 
@@ -55,7 +52,6 @@ public class IntialImportToCassandra extends SparkJob {
                 ;
 //        transactionDF.show();
 
-//         transactionDF.
         Dataset<Row> transactDF = transactionDF.withColumn("trans_time",
                 org.apache.spark.sql.functions.concat_ws(" ",
                         transactionDF.col("trans_date"),
@@ -67,16 +63,12 @@ public class IntialImportToCassandra extends SparkJob {
 
         transDF.show();
 
-
-
-
         String COLUMN_DOUBLE_UDF_NAME = "distanceUdf";
         sparkSession.udf().register(COLUMN_DOUBLE_UDF_NAME, (UDF4<String, String, String, String, Double>)
                 (lat1, lon1, lat2, lon2) -> {
                     Double distance = Utils.getDistance(Double.valueOf(lat1), Double.valueOf( lon1), Double.valueOf(lat2), Double.valueOf(lon2));
                     return distance;
                 }, DataTypes.DoubleType);
-
 
         Dataset<Row> processedDF = transDF.join(
                 org.apache.spark.sql.functions.broadcast(customerAgeDF), "cc_num")
@@ -97,7 +89,6 @@ public class IntialImportToCassandra extends SparkJob {
         fraudDF.show();
         nonFraudDF.show();
 
-
         HashMap<String, String> hmCustomerDF = new HashMap<String, String>();
         hmCustomerDF.put("keyspace", CassandraConfig.keyspace);
         hmCustomerDF.put("table", CassandraConfig.customer);
@@ -111,14 +102,14 @@ public class IntialImportToCassandra extends SparkJob {
         HashMap<String, String> hmFraudDF = new HashMap<String, String>();
         hmFraudDF.put("keyspace", CassandraConfig.keyspace);
         hmFraudDF.put("table", CassandraConfig.fraudTransactionTable);
-//        /* Save fraud transaction data to fraud_transaction cassandra table*/
+        /* Save fraud transaction data to fraud_transaction cassandra table*/
         fraudDF.write()
                 .format("org.apache.spark.sql.cassandra")
                 .mode("append")
                 .options(hmFraudDF)
                 .save();
 
-//        /* Save non fraud transaction data to non_fraud_transaction cassandra table*/
+        /* Save non fraud transaction data to non_fraud_transaction cassandra table*/
         HashMap<String, String> hmNonFraudDF = new HashMap<String, String>();
         hmNonFraudDF.put("keyspace", CassandraConfig.keyspace);
         hmNonFraudDF.put("table", CassandraConfig.nonFraudTransactionTable);

@@ -27,9 +27,10 @@ import java.util.List;
 
 import static org.apache.spark.sql.types.DataTypes.DoubleType;
 import static org.apache.spark.sql.types.DataTypes.createStructField;
-public class FraudDetectionTraining extends SparkJob {
-    private static Logger log = Logger.getLogger(FraudDetectionTraining.class.getName());
-    public FraudDetectionTraining(String appName) {
+
+public class FraudDetectionTrainingMain extends SparkJob {
+    private static Logger log = Logger.getLogger(FraudDetectionTrainingMain.class.getName());
+    public FraudDetectionTrainingMain(String appName) {
         super(appName);
         appName = "Balancing Fraud & Non-Fraud Dataset";
     }
@@ -38,19 +39,22 @@ public class FraudDetectionTraining extends SparkJob {
         SparkJob sparkJobVariable = new SparkJob("Balancing Fraud & Non-Fraud Dataset");
         SparkSession sparkSession = sparkJobVariable.sparkSession;
         Config.parseArgs(args);
+
         Dataset<Row> fraudTransactionDF = DataReader.readFromCassandra(
                         CassandraConfig.keyspace,
                         CassandraConfig.fraudTransactionTable,
                         sparkSession)
-                .select("cc_num",
+                .select("cc_num" ,
                         "category",
                         "merchant",
                         "distance",
                         "amt",
                         "age",
                         "is_fraud");
+
         fraudTransactionDF.show();
-        System.out.println("count fraudTransactionDF = " + fraudTransactionDF.count());
+        System.out.println("count fraudTransactionDF= " + fraudTransactionDF.count());
+
 
         Dataset<Row> nonFraudTransactionDF = DataReader.readFromCassandra(
                         CassandraConfig.keyspace,
@@ -65,14 +69,10 @@ public class FraudDetectionTraining extends SparkJob {
                         "is_fraud");
         nonFraudTransactionDF.show();
         System.out.println("count nonFraudTransactionDF = " + nonFraudTransactionDF.count());
-
-
         Dataset<Row> transactionDF = nonFraudTransactionDF.union(fraudTransactionDF);
         transactionDF.cache();
+
         transactionDF.show(false);
-        System.out.println("count transactionDF = " + transactionDF.count());
-
-
 
         List<String> coloumnNames = Arrays.asList("category",
                 "merchant",
@@ -81,91 +81,74 @@ public class FraudDetectionTraining extends SparkJob {
                 "age");
 
         PipelineStage[] pipelineStages = BuildPipeline.createFeaturePipeline(transactionDF.schema(), coloumnNames);
-        System.out.println("pipelineStages " + pipelineStages);
         Pipeline pipeline = new Pipeline().setStages(pipelineStages);
         PipelineModel preprocessingTransformerModel = pipeline.fit(transactionDF);
 
-        System.out.println("preprocessingTransformerModel = " + preprocessingTransformerModel);
 
         Dataset<Row> featureDF = preprocessingTransformerModel.transform(transactionDF);
+
         featureDF.show(false);
 
-
-        System.out.println("count featureDF = " + featureDF.count());
-
-
-//        Dataset<Row>[] randomSplit = featureDF.randomSplit(new double[]{0.6, 0.4}, 1234L);
         Dataset<Row>[] randomSplit = featureDF.randomSplit(new double[]{0.8, 0.2});
         Dataset<Row> trainData = randomSplit[0];
         Dataset<Row> testData = randomSplit[1];
 
-        trainData.show();
-        System.out.println("count trainData = " + trainData.count());
+        Long featureDFCount = featureDF.count();
+        Long trainDataCount = trainData.count();
+        Long testDataCount = trainData.count();
 
-        testData.show();
-        System.out.println("count testData = " + testData.count());
-
-
-
-
-
-
-
+        System.out.println("featureDFCount: " + featureDFCount);
+        System.out.println("trainDataCount: " + trainDataCount);
+        System.out.println("testDataCount: " + testDataCount);
 
         Dataset<Row> featureLabelDF = trainData.select("features", "is_fraud").cache();
-        Dataset<Row> nonFraudDF = featureLabelDF.filter(featureLabelDF.col("is_fraud").contains("0"));
-        nonFraudDF.show();
-        Dataset<Row> fraudDF = featureLabelDF.filter(featureLabelDF.col("is_fraud").contains("1"));
-        fraudDF.show();
+
+        Dataset<Row> nonFraudDF = featureLabelDF.filter(featureLabelDF.col("is_fraud").contains("0.0"));
+
+        Long nonFraudCount = nonFraudDF.count();
+
+        System.out.println("nonFraudCount: " + nonFraudCount);
+
+        Dataset<Row> fraudDF = featureLabelDF.filter(featureLabelDF.col("is_fraud").contains("1.0"));
         Long fraudCount = fraudDF.count();
+
         System.out.println("fraudCount: " + fraudCount);
 
+
+
+        /* There will be very few fraud transaction and more normal transaction. Models created  from such
+         * imbalanced data will not have good prediction accuracy. Hence balancing the dataset. K-means is used for balancing
+         */
         Dataset<Row> balancedNonFraudDF = DataBalancing.createBalancedDataframe(nonFraudDF, fraudCount.intValue(), sparkSession);
 
         balancedNonFraudDF.show();
-        Dataset<Row> ex3 = balancedNonFraudDF.select("features").as(String.valueOf(DoubleType));
-        List<String> listOne = ex3.as(Encoders.STRING()).collectAsList();
-        List<Row> kfn = new ArrayList<Row>();
-        for (int i = 0; i < listOne.size(); i++) {
-            String[] parts = listOne.get(0).replace("[", "").replace("]", "").split(",");
-            double[] doubleArray = Arrays.stream(parts).mapToDouble(Double::parseDouble).toArray();
-                kfn.add(RowFactory.create(Vectors.dense(doubleArray), 0.0));
-        }
 
-        System.out.println("kfn " + kfn);
+        System.out.println("balancedNonFraudDF.dtypes"  + Arrays.toString(balancedNonFraudDF.dtypes()));
 
-        Dataset<Row> dataset = sparkSession.createDataFrame(
-                kfn,
-                new StructType(new StructField[]{
-                        new StructField("vec", (new VectorUDT()), false, Metadata.empty()),
-                        createStructField("is_fraud", DoubleType, false)
-                }));
-        System.out.println("dataset  dataset.dtypes()" + Arrays.toString(dataset.dtypes()));
-
-        dataset.show();
-
-        Dataset<Row> finalfeatureDF = fraudDF.union(dataset);
-        finalfeatureDF.show();
-
-// ГОТОВО
+//
+        Dataset<Row> finalfeatureDF = fraudDF.union(balancedNonFraudDF);
+//
         RandomForestClassificationModel randomForestModel = Algorithms.randomForestClassifier(finalfeatureDF, sparkSession);
         Dataset<Row> predictionDF = randomForestModel.transform(testData);
         predictionDF.show(false);
+
         Dataset<Row> predictionAndLabels =
                 predictionDF.select(
                         predictionDF.col("prediction"),
                         predictionDF.col("is_fraud")
                                 .cast(DoubleType)).cache();
 
-        // confusion matrix
+        predictionAndLabels.show();
+
+//        // confusion matrix
         Float tp = Float.valueOf(predictionAndLabels.toJavaRDD().filter(row ->
                 ((Double)row.get(0)).doubleValue() == 1.0d && ((Double)row.get(1)).doubleValue() == 1.0d).count());
         Float fp = Float.valueOf(predictionAndLabels.toJavaRDD().filter(row ->
-                ((Double)row.get(0)).doubleValue() == 0.0d && ((Double)row.get(1)).doubleValue() == 1.0d).count());
+                ((Double)row.get(0)).doubleValue() == 1.0d && ((Double)row.get(1)).doubleValue() == 0.0d).count());
         Float tn = Float.valueOf(predictionAndLabels.toJavaRDD().filter(row ->
                 ((Double)row.get(0)).doubleValue() == 0.0d && ((Double)row.get(1)).doubleValue() == 0.0d).count());
         Float fn = Float.valueOf(predictionAndLabels.toJavaRDD().filter(row ->
-                ((Double)row.get(0)).doubleValue() == 1.0d && ((Double)row.get(1)).doubleValue() == 0.0d).count());
+                ((Double)row.get(0)).doubleValue() == 0.0d && ((Double)row.get(1)).doubleValue() == 1.0d).count());
 
         double TN = predictionAndLabels.toJavaRDD().filter(row ->
                 ((Double)row.get(0)).doubleValue() == 0.0d && ((Double)row.get(1)).doubleValue() == 0.0d).count();
@@ -175,12 +158,13 @@ public class FraudDetectionTraining extends SparkJob {
                 ((Double)row.get(0)).doubleValue() == 0.0d && ((Double)row.get(1)).doubleValue() == 1.0d).count();
         double TP = predictionAndLabels.toJavaRDD().filter(row ->
                 ((Double)row.get(0)).doubleValue() == 1.0d && ((Double)row.get(1)).doubleValue() == 1.0d).count();
+//
+//
+        System.out.println("tn " + tn);
+        System.out.println("fp " + fp);
+        System.out.println("fn " + fn);
+        System.out.println("tp " + tp);
 
-
-        System.out.println("TN " + TN);
-        System.out.println("FP " + FP);
-        System.out.println("FN " + FN);
-        System.out.println("TP " + TP);
         System.out.printf("=================== Confusion matrix ==========================\n" +
                         "#############| %-15s                     %-15s\n" +
                         "-------------+-------------------------------------------------\n" +
@@ -203,10 +187,8 @@ public class FraudDetectionTraining extends SparkJob {
         System.out.println("Precision: " +  tp/(tp + fp));
         System.out.println("Accuracy: " +  (tp+tn)/(tp + tn + fp + fn));
 
-
         /* Save Preprocessing  and Random Forest Model */
         randomForestModel.save(SparkConfig.modelPath);
         preprocessingTransformerModel.save(SparkConfig.preprocessingModelPath);
     }
-
 }

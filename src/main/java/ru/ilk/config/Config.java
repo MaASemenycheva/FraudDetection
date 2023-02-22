@@ -5,7 +5,6 @@ import org.apache.log4j.Logger;
 import ru.ilk.cassandra.CassandraConfig;
 import ru.ilk.kafka.KafkaConfig;
 import ru.ilk.spark.SparkConfig;
-
 import java.io.File;
 
 public class Config {

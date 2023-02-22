@@ -2,7 +2,6 @@ package ru.ilk.kafka;
 
 import org.apache.log4j.Logger;
 import ru.ilk.config.Config;
-
 import java.util.HashMap;
 import java.util.Map;
 
@@ -12,7 +11,6 @@ public class KafkaConfig {
 
     public static Map<String, Object> kafkaParams = new HashMap();
 
-    // !!!!!!!!!!!!!!!!!!!!!!!!! void
     public static void load() {
         logger.info("Loading Kafka Setttings");
         kafkaParams.put("topic", Config.applicationConf.getString("config.kafka.topic"));
@@ -22,7 +20,6 @@ public class KafkaConfig {
         kafkaParams.put("auto.offset.reset", Config.applicationConf.getString("config.kafka.auto.offset.reset"));
     }
 
-    // !!!!!!!!!!!!!!!!!!!!!!!!! void
     /* Default Settings will be used when you run the project from Intellij */
     public static void defaultSetting() {
         kafkaParams.put("topic", "creditcardTransaction");
@@ -31,5 +28,4 @@ public class KafkaConfig {
         kafkaParams.put("bootstrap.servers", "localhost:9092");
         kafkaParams.put("auto.offset.reset", "earliest");
     }
-
 }
